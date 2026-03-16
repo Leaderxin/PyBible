@@ -551,96 +551,50 @@ with ThreadPoolExecutor(max_workers=10) as executor:
 
 ## 4. 数据库操作
 
-### 4.1 SQLite
+### 4.1 MySQL
 
 ```python
-import sqlite3
-
-# 连接数据库
-conn = sqlite3.connect("example.db")
-cursor = conn.cursor()
-
-# 创建表
-cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE,
-        age INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-""")
-
-# 插入数据
-cursor.execute(
-    "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
-    ("Alice", "alice@example.com", 25)
-)
-conn.commit()
-
-# 批量插入
-users = [
-    ("Bob", "bob@example.com", 30),
-    ("Charlie", "charlie@example.com", 35),
-]
-cursor.executemany(
-    "INSERT INTO users (name, email, age) VALUES (?, ?, ?)",
-    users
-)
-conn.commit()
-
-# 查询数据
-cursor.execute("SELECT * FROM users")
-rows = cursor.fetchall()
-for row in rows:
-    print(row)
-
-# 条件查询
-cursor.execute("SELECT * FROM users WHERE age > ?", (28,))
-for row in cursor.fetchall():
-    print(row)
-
-# 更新数据
-cursor.execute("UPDATE users SET age = ? WHERE name = ?", (26, "Alice"))
-conn.commit()
-
-# 删除数据
-cursor.execute("DELETE FROM users WHERE name = ?", ("Bob",))
-conn.commit()
-
-# 关闭连接
-conn.close()
-
-# 使用上下文管理器
-with sqlite3.connect("example.db") as conn:
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users")
-    print(cursor.fetchall())
-```
-
-### 4.2 MySQL
-
-```python
-# 安装: pip install pymysql
+# 安装: pip install pymysql DBUtils
 import pymysql
 from contextlib import contextmanager
+from dbutils.pooled_db import PooledDB
+import pymysql
+
+# 连接池配置
+pool = PooledDB(
+    creator=pymysql,
+    maxconnections=10,
+    mincached=2,
+    maxcached=5,
+    blocking=True,
+    host="localhost",
+    user="root",
+    password="password",
+    database="test",
+    charset="utf8mb4",
+    cursorclass=pymysql.cursors.DictCursor
+)
 
 @contextmanager
 def get_connection():
-    conn = pymysql.connect(
-        host="localhost",
-        user="root",
-        password="password",
-        database="test",
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor
-    )
+    """获取数据库连接（从连接池）"""
+    conn = pool.connection()
     try:
         yield conn
     finally:
-        conn.close()
+        conn.close()  # 归还连接到池
 
-# 查询
+# ============ 基本操作 ============
+
+# 查询单条
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = "SELECT * FROM users WHERE id = %s"
+        cursor.execute(sql, (1,))
+        user = cursor.fetchone()
+        print(user)
+
+# 查询多条
 with get_connection() as conn:
     with conn.cursor() as cursor:
         sql = "SELECT * FROM users WHERE age > %s"
@@ -649,11 +603,28 @@ with get_connection() as conn:
         for row in result:
             print(row)
 
-# 插入
+# 插入（返回自增ID）
 with get_connection() as conn:
     with conn.cursor() as cursor:
         sql = "INSERT INTO users (name, email, age) VALUES (%s, %s, %s)"
         cursor.execute(sql, ("Alice", "alice@example.com", 25))
+        new_id = cursor.lastrowid  # 获取自增ID
+        print(f"新用户ID: {new_id}")
+    conn.commit()
+
+# 更新
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = "UPDATE users SET age = %s WHERE name = %s"
+        affected = cursor.execute(sql, (26, "Alice"))
+        print(f"影响行数: {affected}")
+    conn.commit()
+
+# 删除
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = "DELETE FROM users WHERE name = %s"
+        cursor.execute(sql, ("Bob",))
     conn.commit()
 
 # 批量操作
@@ -666,47 +637,384 @@ with get_connection() as conn:
         ]
         cursor.executemany(sql, data)
     conn.commit()
-```
 
-### 4.3 PostgreSQL
+# ============ 事务处理 ============
 
-```python
-# 安装: pip install psycopg2-binary
-import psycopg2
-from contextlib import contextmanager
-
-@contextmanager
-def get_connection():
-    conn = psycopg2.connect(
-        host="localhost",
-        user="postgres",
-        password="password",
-        database="test"
-    )
+# 手动事务控制
+def transfer_money(from_id, to_id, amount):
+    """转账示例：原子性操作"""
+    conn = pool.connection()
     try:
-        yield conn
+        with conn.cursor() as cursor:
+            # 扣款
+            sql1 = "UPDATE accounts SET balance = balance - %s WHERE id = %s"
+            cursor.execute(sql1, (amount, from_id))
+            
+            # 收款
+            sql2 = "UPDATE accounts SET balance = balance + %s WHERE id = %s"
+            cursor.execute(sql2, (amount, to_id))
+            
+        conn.commit()  # 提交事务
+        return True
+    except Exception as e:
+        conn.rollback()  # 回滚事务
+        print(f"转账失败: {e}")
+        return False
     finally:
         conn.close()
 
-# 使用 psycopg2.extras 实现批量插入
-from psycopg2 import extras
+# 上下文管理器事务
+@contextmanager
+def transaction(conn):
+    """事务上下文管理器 - 自动处理提交和回滚"""
+    try:
+        yield conn
+        conn.commit()  # 正常执行后提交
+    except Exception as e:
+        conn.rollback()  # 异常发生时自动回滚
+        raise e
 
+# 使用示例
+with get_connection() as conn:
+    with transaction(conn):
+        with conn.cursor() as cursor:
+            cursor.execute("UPDATE users SET age = 30 WHERE id = 1")
+            cursor.execute("UPDATE users SET age = 20 WHERE id = 2")
+            # 如果这里发生异常，会自动回滚
+
+# 带异常演示
+try:
+    with get_connection() as conn:
+        with transaction(conn):
+            with conn.cursor() as cursor:
+                cursor.execute("UPDATE users SET age = 30 WHERE id = 1")
+                raise ValueError("模拟错误")  # 触发回滚
+except ValueError:
+    print("事务已回滚")
+
+# ============ 异常处理 ============
+
+from pymysql.err import OperationalError, IntegrityError
+
+def safe_query(sql, params=None):
+    """安全的查询封装"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params or ())
+                return cursor.fetchall()
+    except OperationalError as e:
+        print(f"数据库连接错误: {e}")
+        return None
+    except IntegrityError as e:
+        print(f"数据完整性错误: {e}")
+        return None
+    except Exception as e:
+        print(f"未知错误: {e}")
+        return None
+
+# ============ 预处理语句与参数化查询 ============
+
+# 防止SQL注入，始终使用参数化查询
+def search_users(keyword):
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            # 正确：参数化查询
+            sql = "SELECT * FROM users WHERE name LIKE %s"
+            cursor.execute(sql, (f"%{keyword}%",))
+            return cursor.fetchall()
+
+# ============ 事务隔离级别 ============
+
+# 设置事务隔离级别
+conn = pymysql.connect(
+    host="localhost",
+    user="root",
+    password="password",
+    database="test",
+    isolation_level="READ COMMITTED"  # 可选: READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE
+)
+
+# ============ 游标类型 ============
+
+# DictCursor: 返回字典格式
+conn = pool.connection()
+with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+    cursor.execute("SELECT * FROM users")
+    row = cursor.fetchone()
+    print(row["name"])  # 通过键访问
+
+# SSCursor: 服务端游标（用于大数据量）
+# 适用于一次性读取大量数据，避免内存溢出
+conn = pymysql.connect(
+    host="localhost",
+    user="root",
+    password="password",
+    database="test"
+)
+with conn.cursor(pymysql.cursors.SSCursor) as cursor:
+    cursor.execute("SELECT * FROM large_table")
+    while True:
+        row = cursor.fetchone()
+        if not row:
+            break
+        # 处理每一行
+        process(row)
+
+conn.close()
+```
+
+### 4.2 PostgreSQL
+
+```python
+# 安装: pip install psycopg2-binary DBUtils
+import psycopg2
+from psycopg2 import pool, extras
+from contextlib import contextmanager
+from psycopg2.errors import UniqueViolation, ForeignKeyViolation
+
+# 连接池配置
+connection_pool = pool.ThreadedConnectionPool(
+    minconn=2,
+    maxconn=10,
+    host="localhost",
+    user="postgres",
+    password="password",
+    database="test"
+)
+
+@contextmanager
+def get_connection():
+    """获取数据库连接（从连接池）"""
+    conn = connection_pool.getconn()
+    try:
+        yield conn
+    finally:
+        connection_pool.putconn(conn)  # 归还连接到池
+
+# ============ 基本操作 ============
+
+# 查询单条
 with get_connection() as conn:
     with conn.cursor() as cursor:
-        # 批量插入
+        sql = "SELECT * FROM users WHERE id = %s"
+        cursor.execute(sql, (1,))
+        user = cursor.fetchone()
+        print(user)
+
+# 查询多条
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = "SELECT * FROM users WHERE age > %s"
+        cursor.execute(sql, (25,))
+        result = cursor.fetchall()
+        for row in result:
+            print(row)
+
+# 插入（返回数据）
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = "INSERT INTO users (name, email, age) VALUES (%s, %s, %s) RETURNING id"
+        cursor.execute(sql, ("Alice", "alice@example.com", 25))
+        new_id = cursor.fetchone()[0]  # 获取RETURNING的id
+        print(f"新用户ID: {new_id}")
+    conn.commit()
+
+# 更新
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = "UPDATE users SET age = %s WHERE name = %s"
+        cursor.execute(sql, (26, "Alice"))
+        print(f"影响行数: {cursor.rowcount}")
+    conn.commit()
+
+# 删除
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = "DELETE FROM users WHERE name = %s"
+        cursor.execute(sql, ("Bob",))
+    conn.commit()
+
+# 批量插入（高性能）
+with get_connection() as conn:
+    with conn.cursor() as cursor:
         data = [
             ("Alice", "alice@example.com", 25),
             ("Bob", "bob@example.com", 30),
+            ("Charlie", "charlie@example.com", 35),
         ]
+        # 使用 execute_values 批量插入（比 executemany 快）
         extras.execute_values(
             cursor,
             "INSERT INTO users (name, email, age) VALUES %s",
             data
         )
     conn.commit()
+
+# ============ 事务处理 ============
+
+# 手动事务控制
+def transfer_money(from_id, to_id, amount):
+    """转账示例：原子性操作"""
+    conn = connection_pool.getconn()
+    try:
+        with conn.cursor() as cursor:
+            # 扣款
+            sql1 = "UPDATE accounts SET balance = balance - %s WHERE id = %s"
+            cursor.execute(sql1, (amount, from_id))
+            
+            # 收款
+            sql2 = "UPDATE accounts SET balance = balance + %s WHERE id = %s"
+            cursor.execute(sql2, (amount, to_id))
+            
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        print(f"转账失败: {e}")
+        return False
+    finally:
+        connection_pool.putconn(conn)
+
+# 保存点事务
+def complex_operation():
+    """使用保存点进行部分回滚"""
+    with get_connection() as conn:
+        with conn.cursor() as cursor:
+            try:
+                # 开始事务
+                cursor.execute("INSERT INTO logs (action) VALUES ('step1')")
+                
+                # 创建保存点
+                cursor.execute("SAVEPOINT step1")
+                
+                try:
+                    cursor.execute("INSERT INTO logs (action) VALUES ('step2')")
+                    # 模拟错误
+                    # raise ValueError("模拟错误")
+                except:
+                    # 回滚到保存点
+                    cursor.execute("ROLLBACK TO SAVEPOINT step1")
+                
+                cursor.execute("INSERT INTO logs (action) VALUES ('step3')")
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"操作失败: {e}")
+
+# ============ 异常处理 ============
+
+from psycopg2 import errors
+
+def safe_query(sql, params=None):
+    """安全的查询封装"""
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cursor:
+                cursor.execute(sql, params or ())
+                return cursor.fetchall()
+    except errors.ConnectionFailure as e:
+        print(f"数据库连接错误: {e}")
+        return None
+    except errors.UniqueViolation as e:
+        print(f"唯一约束冲突: {e}")
+        return None
+    except errors.ForeignKeyViolation as e:
+        print(f"外键约束冲突: {e}")
+        return None
+    except errors.UndefinedTable as e:
+        print(f"表不存在: {e}")
+        return None
+    except Exception as e:
+        print(f"未知错误: {e}")
+        return None
+
+# ============ PostgreSQL 特有功能 ============
+
+# JSON/JSONB 操作
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        # 插入JSON数据
+        cursor.execute(
+            "INSERT INTO orders (data) VALUES (%s)",
+            ('{"items": [{"name": "book", "price": 100}]}',)
+        )
+        
+        # 查询JSON字段
+        cursor.execute("SELECT data->'items' FROM orders WHERE id = 1")
+        
+        # 使用JSONB索引
+        cursor.execute("SELECT * FROM orders WHERE data @> %s", ('{"items": [{"name": "book"}]}',))
+
+# 数组操作
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        # 插入数组
+        cursor.execute(
+            "INSERT INTO tags (name, values) VALUES (%s, %s)",
+            ("colors", ["red", "green", "blue"])
+        )
+        
+        # 查询数组
+        cursor.execute("SELECT * FROM tags WHERE %s = ANY(values)", ("red",))
+
+# 事务隔离级别
+with get_connection() as conn:
+    conn.set_session(isolation_level="SERIALIZABLE")
+    # 或者
+    conn.set_session(read_only=True)
+    
+    with conn.cursor() as cursor:
+        cursor.execute("SELECT * FROM users")
+        # ... 操作
+    
+    conn.set_session(isolation_level="READ COMMITTED")
+
+# 批量upsert (ON CONFLICT)
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        sql = """
+            INSERT INTO users (name, email, age) VALUES (%s, %s, %s)
+            ON CONFLICT (email) DO UPDATE SET
+                age = EXCLUDED.age,
+                updated_at = NOW()
+        """
+        cursor.execute(sql, ("Alice", "alice@example.com", 30))
+    conn.commit()
+
+# ============ 预处理语句 ============
+
+# 使用 psycopg2 的预处理语句（服务器端准备）
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        # 准备语句
+        cursor.execute("PREPARE user_plan AS SELECT * FROM users WHERE id = $1")
+        
+        # 执行预处理语句
+        cursor.execute("EXECUTE user_plan", (1,))
+        
+        # 删除预处理语句
+        cursor.execute("DEALLOCATE user_plan")
+
+# ============ COPY 批量导入导出 ============
+
+# 批量导入CSV到数据库
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        with open("data.csv", "r") as f:
+            cursor.copy_from(f, "users", sep=",")
+
+# 批量导出数据库到CSV
+with get_connection() as conn:
+    with conn.cursor() as cursor:
+        with open("output.csv", "w") as f:
+            cursor.copy_to(f, "users", sep=",")
+
+# 关闭连接池
+connection_pool.closeall()
 ```
 
-### 4.4 SQLAlchemy ORM
+### 4.3 SQLAlchemy ORM
 
 ```python
 # 安装: pip install sqlalchemy
