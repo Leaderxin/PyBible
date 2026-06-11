@@ -179,6 +179,9 @@ non_empty = list(filter(None, strings))  # 移除 falsy 值
 print(non_empty)  # ['hello', 'world']
 ```
 
+> **💡 `filter(None, iterable)` 等价于 `filter(lambda x: x, iterable)`**  
+> 规则始终是：`function(item)` 为 truthy → **保留**。`None` 并不是"取反"，而是把元素本身当作判断条件。
+
 #### reduce - 累积
 
 ```python
@@ -210,17 +213,22 @@ students = [
     {"name": "Charlie", "age": 28, "score": 78}
 ]
 
-# 按年龄排序
+# 单字段升序：按年龄从小到大
 by_age = sorted(students, key=lambda x: x["age"])
 print(by_age)
+# [Bob(22) → Alice(25) → Charlie(28)]
 
-# 按分数降序排序
+# 单字段降序：按分数从高到低
 by_score = sorted(students, key=lambda x: x["score"], reverse=True)
 print(by_score)
+# [Bob(90) → Alice(85) → Charlie(78)]
 
-# 多级排序
+# 多级排序：先按分数降序，同分则按年龄升序
+# -score 取负数，将"高分"转为"小值"，利用默认升序实现降序效果
+# 元组比较从左到右，第一位相同才会比较第二位
 by_score_age = sorted(students, key=lambda x: (-x["score"], x["age"]))
 print(by_score_age)
+# [Bob(90,22) → Alice(85,25) → Charlie(78,28)]
 ```
 
 ### 1.4 匿名函数与闭包
@@ -242,10 +250,12 @@ print(add5(3))   # 8
 print(add10(3))  # 13
 
 # 闭包捕获可变对象
+# 原理：内部函数可以读取外层变量，但不能直接对其重新赋值（=）
+# 方案一：用列表包裹——修改列表内容不算重新赋值，所以无需 nonlocal
 def make_counter():
     count = [0]  # 使用列表捕获
     def counter():
-        count[0] += 1
+        count[0] += 1   # 修改的是 count[0]，不是 count 本身
         return count[0]
     return counter
 
@@ -253,14 +263,20 @@ c = make_counter()
 print(c())  # 1
 print(c())  # 2
 
-# nonlocal 关键字
+# 方案二：nonlocal 关键字（更推荐）
+# nonlocal 声明后，内部函数可以直接对外层变量重新赋值
 def make_counter2():
     count = 0
     def counter():
-        nonlocal count
-        count += 1
+        nonlocal count   # 告诉 Python：这里的 count 不是局部变量
+        count += 1       # 等价于 count = count + 1，需要 nonlocal 才能执行
         return count
     return counter
+
+c2 = make_counter2()
+print(c2())  # 1
+print(c2())  # 2
+print(c2())  # 3
 ```
 
 ### 1.5 函数组合与柯里化
