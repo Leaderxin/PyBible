@@ -25,21 +25,92 @@
 
 ```python
 # 函数式 vs 命令式
-# 命令式
-def sum_even(numbers):
-    total = 0
-    for n in numbers:
-        if n % 2 == 0:
-            total += n
-    return total
 
-# 函数式
-def sum_even_fp(numbers):
-    return sum(filter(lambda x: x % 2 == 0, numbers))
+# 场景：从日志列表中统计每种错误的出现次数，按频率降序排列
+# 这个例子体现了两种范式的核心差异，而不只是语法糖的区别
 
-# 或使用列表推导式
-def sum_even_lc(numbers):
-    return sum(x for x in numbers if x % 2 == 0)
+logs = [
+    "ERROR: Database connection failed",
+    "INFO : Server started",
+    "ERROR: Timeout on request",
+    "DEBUG: Processing item 42",
+    "ERROR: Database connection failed",  # 重复错误，需合并计数
+    "INFO : Request completed",
+    "ERROR: Out of memory",
+]
+
+# === 命令式：逐步告诉计算机"怎么做"（How）===
+# 特点：显式循环、手动管理可变状态、大量中间变量、关注执行步骤
+def count_errors_imperative(logs):
+    """统计错误出现次数 - 命令式风格"""
+    # 步骤1：筛选 ERROR 行 → 存入可变列表
+    errors = []
+    for line in logs:
+        if line.startswith("ERROR"):
+            errors.append(line)
+
+    # 步骤2：提取错误消息体 → 存入另一个可变列表
+    messages = []
+    for line in errors:
+        msg = line[7:]  # 去掉 "ERROR: " 前缀
+        messages.append(msg)
+
+    # 步骤3：统计每种消息出现次数 → 手动维护字典这个可变状态
+    counts = {}
+    for msg in messages:
+        if msg in counts:
+            counts[msg] += 1  # 修改已有状态
+        else:
+            counts[msg] = 1   # 初始化新状态
+
+    # 步骤4：转为列表并按频率降序排列 → 又一个临时变量
+    result = []
+    for msg, cnt in counts.items():
+        result.append((cnt, msg))
+    result.sort(reverse=True)
+
+    return result
+
+
+# === 函数式：声明"要什么"（What）===
+# 特点：数据变换管道、无中间可变状态、每步是独立的纯函数转换
+from collections import Counter
+
+def count_errors_functional(logs):
+    """统计错误出现次数 - 函数式风格"""
+    # 整个逻辑是一条数据管道，从左到右：
+    #   原始日志 → 只保留ERROR → 提取消息体 → 计数 → 排序
+    return sorted(
+        Counter(
+            map(
+                lambda line: line[7:],           # ③ 提取错误消息
+                filter(
+                    lambda line: line.startswith("ERROR"),  # ② 筛选错误行
+                    logs                          # ① 输入
+                )
+            )
+        ).items(),
+        key=lambda x: x[1],   # 按出现次数排序
+        reverse=True           # 降序
+    )
+
+print(count_errors_imperative(logs))
+# [(2, 'Database connection failed'), (1, 'Timeout on request'), (1, 'Out of memory')]
+print(count_errors_functional(logs))
+# [('Database connection failed', 2), ('Timeout on request', 1), ('Out of memory', 1)]
+
+
+# === 核心差异总结 ===
+# ┌────────────┬──────────────────────────┬───────────────────────────┐
+# │ 维度       │ 命令式 (Imperative)       │ 函数式 (Functional)       │
+# ├────────────┼──────────────────────────┼───────────────────────────┤
+# │ 思考方式   │ "怎么做" — 逐步命令计算机  │ "要什么" — 声明数据如何变换 │
+# │ 状态管理   │ 可变变量，手动更新         │ 不可变，每步返回新数据      │
+# │ 控制流     │ 显式 for/if 嵌套          │ 高阶函数 (map/filter/reduce)│
+# │ 中间变量   │ errors, messages, result  │ 管道直连，无需命名临时值   │
+# │ 可测试性   │ 整体测试（步骤耦合）       │ 每个转换函数可独立测试      │
+# │ 并行友好   │ 依赖执行顺序，难并行        │ 无副作用，天然适合并行      │
+# └────────────┴──────────────────────────┴───────────────────────────┘
 ```
 
 ### 1.2 高阶函数
@@ -261,15 +332,15 @@ print(say_hello("Bob", "?"))  # Hello, Bob?
 ```python
 # 迭代器协议
 class Counter:
-    def __init__(self, max):
+    def __init__(self, limit):
         self.current = 0
-        self.max = max
+        self.limit = limit
     
     def __iter__(self):
         return self
     
     def __next__(self):
-        if self.current >= self.max:
+        if self.current >= self.limit:
             raise StopIteration
         result = self.current
         self.current += 1
@@ -329,10 +400,12 @@ result = list(repeat(5, 3))  # [5, 5, 5]
 # chain - 连接多个迭代器
 result = list(chain([1, 2], [3, 4], [5]))  # [1, 2, 3, 4, 5]
 
-# groupby - 分组
+# groupby - 分组（⚠️ 需预排序：只对连续元素分组）
 data = [("apple", "fruit"), ("banana", "fruit"), ("carrot", "vegetable")]
+# 数据已按 key 排序，所以 groupby 能正确分组
 for key, group in groupby(data, key=lambda x: x[1]):
     print(f"{key}: {list(group)}")
+# 如果数据未排序，需先 sorted(data, key=...) 再 groupby
 
 # functools 模块
 from functools import lru_cache, reduce, partial, wraps
@@ -413,6 +486,16 @@ class Rectangle:
         if value <= 0:
             raise ValueError("Width must be positive")
         self._width = value
+    
+    @property
+    def height(self):
+        return self._height
+    
+    @height.setter
+    def height(self, value):
+        if value <= 0:
+            raise ValueError("Height must be positive")
+        self._height = value
     
     # 实例方法
     def scale(self, factor):
@@ -627,24 +710,25 @@ def render(drawable: Drawable):
 render(Circle())  # 运行时检查通过
 render(Square())  # 运行时检查通过
 
-# 类型检查（mypy）
+# @runtime_checkable 让 isinstance(obj, Drawable) 可用，但不会自动校验类型注解
 # class NotDrawable:
 #     pass
-# render(NotDrawable())  # 运行时检查失败
+# isinstance(NotDrawable(), Drawable)  # False
+# render(NotDrawable())  # 运行时会因缺少 draw 方法而抛出 AttributeError
 ```
 
 ### 3.3 数据类（dataclass）
 
 ```python
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import Optional
 
 @dataclass
 class Person:
     name: str
     age: int
     email: str = ""  # 带默认值的字段
-    hobbies: List[str] = field(default_factory=list)
+    hobbies: list[str] = field(default_factory=list)
     
     # 初始化后的处理
     def __post_init__(self):
@@ -796,6 +880,8 @@ class Range:
         self.name = name
     
     def __get__(self, obj, objtype=None):
+        if obj is None:
+            return self
         return getattr(obj, f"_{self.name}")
     
     def __set__(self, obj, value):
@@ -809,6 +895,7 @@ class Temperature:
     
     def __init__(self, celsius):
         self.celsius = celsius
+        self.fahrenheit = celsius * 9/5 + 32
 ```
 
 ### 3.8 元类
@@ -1106,14 +1193,19 @@ print(sorter.sort([3, 1, 2]))
 
 ```python
 # 装饰器模式（不是函数装饰器，而是类装饰器）
-class Coffee:
+class CoffeeComponent:
+    """咖啡组件接口：所有咖啡类（基础咖啡和装饰器）的共同基类"""
+    def cost(self):
+        raise NotImplementedError
+
+class Coffee(CoffeeComponent):
     """基础咖啡组件"""
     def cost(self):
         return 5
 
-class CoffeeDecorator:
+class CoffeeDecorator(CoffeeComponent):
     """咖啡装饰器基类：持有一个咖啡组件的引用"""
-    def __init__(self, coffee: Coffee):
+    def __init__(self, coffee: CoffeeComponent):
         self._coffee = coffee
     
     def cost(self):
@@ -1343,7 +1435,6 @@ print(result)  # 30
 
 # 函数式数据处理
 from dataclasses import dataclass
-from typing import List
 
 @dataclass
 class Order:
@@ -1360,7 +1451,7 @@ orders = [
 ]
 
 # 函数式查询
-def query(orders: List[Order], predicate, mapper):
+def query(orders: list[Order], predicate, mapper):
     return list(map(mapper, filter(predicate, orders)))
 
 # 查询 Alice 的已完成订单
@@ -1384,7 +1475,7 @@ print(total)  # 250.0
 
 ```python
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List
+from typing import Callable
 from datetime import datetime
 
 @dataclass
@@ -1395,7 +1486,7 @@ class Event:
 
 class EventBus:
     def __init__(self):
-        self._handlers: Dict[str, List[Callable]] = {}
+        self._handlers: dict[str, list[Callable]] = {}
     
     def subscribe(self, event_name: str, handler: Callable):
         if event_name not in self._handlers:
@@ -1453,7 +1544,7 @@ class FileLogger(Logger):
 
 class LoggerChain:
     def __init__(self):
-        self._loggers: List[Logger] = []
+        self._loggers: list[Logger] = []
     
     def add_logger(self, logger: Logger):
         self._loggers.append(logger)
