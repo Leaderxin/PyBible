@@ -12,6 +12,8 @@
 4. [控制流](#4-控制流)
 5. [函数](#5-函数)
 6. [错误处理](#6-错误处理)
+7. [常用内置函数](#7-常用内置函数)
+8. [实战示例](#8-实战示例)
 
 ---
 
@@ -28,8 +30,7 @@ import this
 核心原则：
 - **简洁优于复杂**：Python 语法简洁明了
 - **显式优于隐式**：清晰表达意图
-- **组合优于继承**：优先使用函数组合
-- **TIOBE 排名**：长期位居前三
+- **可读性很重要**：代码被阅读的次数远多于被编写的次数
 
 ### 1.2 开发环境配置
 
@@ -136,12 +137,12 @@ a = b = c = 0          # 链式赋值
 
 ```python
 # 常用命名约定
-user_name = "alice"           # 变量/函数
-class UserProfile:            # 类名用 PascalCase
-MAX_RETRY_COUNT = 3           # 常量全大写
-_private_method(self):        # 单下划线前缀：内部使用
-__init__(self):               # 双下划线前缀：名称重整
-__all__ = ["func1", "func2"]  # 导出列表
+user_name = "alice"           # 变量/函数 (snake_case)
+class UserProfile:            # 类名 (PascalCase)
+MAX_RETRY_COUNT = 3           # 常量 (全大写)
+def _private_method(self):    # 单下划线前缀：内部使用
+def __init__(self):           # 双下划线前缀：名称重整
+__all__ = ["func1", "func2"]  # 模块导出列表
 ```
 
 ### 2.4 运算符
@@ -341,7 +342,9 @@ empty = ()
 
 # 元组解包
 x, y = point         # x=10, y=20
-a, *b, c = [1, 2, 3, 4, 5]  # a=1, b=[2,3,4], c=5
+
+# 扩展解包（元组、列表均可）
+a, *b, c = (1, 2, 3, 4, 5)  # a=1, b=[2,3,4], c=5
 
 # 命名元组（更易读）
 from collections import namedtuple
@@ -374,7 +377,7 @@ print(person.values())       # dict_values(['Alice', 26, 'Beijing'])
 print(person.items())       # dict_items([('name','Alice'), ...])
 
 # 字典推导式
-squares = {x: x**2 for x in range(5)}
+squares = {x: x**2 for x in range(5)}  # {0: 0, 1: 1, 2: 4, 3: 9, 4: 16}
 
 # 合并字典（Python 3.9+）
 d1 = {"a": 1}
@@ -445,9 +448,11 @@ else:
     grade = "D"
 
 # 简写形式（三元运算符）
+age = 20
 status = "成年" if age >= 18 else "未成年"
 
 # 多个条件
+is_student = True
 if age >= 18 and is_student:
     print("学生票")
 ```
@@ -703,9 +708,8 @@ def process_items(items=None):
 | `to=None` | 每次调用时创建新对象 | ✅ 独立状态 |
 
 > 💡 **记住**：永远不要使用可变对象（`list`、`dict`、`set` 等）作为默认参数，除非你**有意**要共享状态。
-```
 
-### 5.3 *args 和 **kwargs
+### 5.3 \*args 和 \*\*kwargs
 
 ```python
 # *args - 可变位置参数
@@ -726,30 +730,40 @@ def func(pos, *args, **kwargs):
     print(pos)       # 位置参数
     print(args)      # 额外的位置参数
     print(kwargs)    # 关键字参数
+
+func("a", 1, 2, 3, name="Alice", age=25)
+# 输出:
+# a                       ← 第一个参数给了 pos
+# (1, 2, 3)               ← 剩余位置参数被 *args 收集为元组
+# {'name': 'Alice', 'age': 25}  ← 关键字参数被 **kwargs 收集为字典
 ```
 
 ### 5.4 函数注解（类型提示）
 
 ```python
 # 类型注解 - Python 3.5+
+# name: str  → 参数 name 应为字符串类型
+# -> str     → 函数返回值为字符串类型
 def greet(name: str) -> str:
     return f"Hello, {name}!"
 
-# 复杂类型
+# 复杂类型（需从 typing 导入）
 from typing import List, Dict, Optional, Union
 
 def process_data(
-    data: List[int],
-    config: Optional[Dict[str, str]] = None
-) -> Union[int, str]:
+    data: List[int],                          # 整数列表
+    config: Optional[Dict[str, str]] = None   # Optional[X] = Union[X, None]；=None 才让参数可省略
+) -> Union[int, str]:                         # 返回值可以是 int 或 str
     """处理数据并返回结果"""
     if not data:
-        return "No data"
-    return sum(data)
+        return "No data"                      # 返回 str
+    return sum(data)                          # 返回 int
 
-# Python 3.9+ 可直接使用内置类型注解
-def greet(name: list[str]) -> dict[str, int]:
-    return {name[0]: len(name)}
+# Python 3.9+ 可直接使用内置类型注解（无需 import typing）
+# list[str] 等价于 typing.List[str]
+# dict[str, int] 等价于 typing.Dict[str, int]
+def greet2(name: list[str]) -> dict[str, int]:
+    return {name[0]: len(name)}               # {'Alice': 5}
 ```
 
 ### 5.5 特殊函数
@@ -765,10 +779,11 @@ add = lambda x, y: x + y
 numbers = [3, 1, 4, 1, 5, 9, 2, 6]
 sorted_nums = sorted(numbers, key=lambda x: -x)  # 降序
 
-# 高阶函数
-result = map(lambda x: x * 2, [1, 2, 3])  # [2, 4, 6]
-result = filter(lambda x: x > 2, [1, 2, 3])  # [3]
-result = reduce(lambda x, y: x + y, [1, 2, 3])  # 6
+# 高阶函数（返回迭代器，需 list() 查看结果）
+result = list(map(lambda x: x * 2, [1, 2, 3]))     # [2, 4, 6]
+result = list(filter(lambda x: x > 2, [1, 2, 3]))   # [3]
+from functools import reduce
+result = reduce(lambda x, y: x + y, [1, 2, 3])      # 6
 ```
 
 #### 闭包
@@ -789,10 +804,18 @@ print(times3(5))  # 15
 def counter():
     count = 0
     def increment():
-        nonlocal count
+        nonlocal count    # 声明要修改外层 count（非全局变量）
         count += 1
         return count
-    return increment
+    return increment      # 返回内部函数（闭包）
+
+c = counter()             # 创建一个计数器实例
+print(c())  # 1           # 每次调用，count 在上次基础上 +1
+print(c())  # 2
+print(c())  # 3
+
+d = counter()             # 另一个独立实例，count 从 0 开始
+print(d())  # 1
 ```
 
 ### 5.6 装饰器
@@ -807,11 +830,15 @@ def my_decorator(func):
         return result
     return wrapper
 
-@my_decorator
+@my_decorator               # 等价于 say_hello = my_decorator(say_hello)
 def say_hello():
     print("Hello!")
 
 say_hello()
+# 输出:
+# Before function call
+# Hello!
+# After function call
 
 # 装饰器工厂（带参数）
 def repeat(times):
@@ -823,9 +850,15 @@ def repeat(times):
         return wrapper
     return decorator
 
-@repeat(times=3)
+@repeat(times=3)             # 等价于 greet = repeat(times=3)(greet)
 def greet():
     print("Hello!")
+
+greet()
+# 输出:
+# Hello!
+# Hello!
+# Hello!
 
 # 使用 functools.wraps 保留原函数信息
 
@@ -919,7 +952,6 @@ print(slow_function.__wrapped__)  # 指向原函数
 ```
 
 > 💡 **最佳实践**：**始终**在装饰器的 wrapper 中使用 `@functools.wraps(func)`，除非有特殊原因不需要保留原函数信息。
-```
 
 ---
 
@@ -988,6 +1020,8 @@ with open("file.txt", "r") as f:
 # 文件自动关闭
 
 # 自定义上下文管理器
+import time
+
 class Timer:
     def __enter__(self):
         self.start = time.time()
@@ -1031,32 +1065,32 @@ callable(func)     # 是否可调用
 ### 7.2 迭代相关
 
 ```python
-list(range(10))        # [0, 1, 2, ..., 9]
-enumerate(["a","b"])   # [(0, 'a'), (1, 'b')]
-zip([1,2], [3,4])      # [(1,3), (2,4)]
-reversed([1,2,3])      # 反向迭代器
-sorted([3,1,2])        # [1,2,3]
-any([False, True])    # True
-all([True, True])     # True
-next(iter)             # 获取下一个元素
+list(range(10))            # [0, 1, 2, ..., 9]
+list(enumerate(["a","b"]))  # [(0, 'a'), (1, 'b')]
+list(zip([1,2], [3,4]))     # [(1,3), (2,4)]
+list(reversed([1,2,3]))     # [3, 2, 1]
+sorted([3,1,2])            # [1,2,3]
+any([False, True])         # True
+all([True, True])          # True
+next(iter([1,2,3]))       # 1  获取迭代器下一个元素
 ```
 
 ### 7.3 转换与操作
 
 ```python
-list("abc")      # ['a', 'b', 'c']
-dict([('a',1),('b',2)])  # {'a': 1, 'b': 2}
-set([1,2,2])     # {1, 2}
-tuple([1,2])    # (1, 2)
-hex(255)        # '0xff'
-oct(8)          # '0o10'
-bin(5)          # '0b101'
-ord('a')        # 97
-chr(97)         # 'a'
-round(3.7)      # 4
-abs(-5)         # 5
-pow(2, 3)       # 8
-divmod(10, 3)   # (3, 1)
+list("abc")              # ['a', 'b', 'c']    将序列转为列表
+dict([('a',1),('b',2)])  # {'a': 1, 'b': 2}   将键值对序列转为字典
+set([1,2,2])             # {1, 2}             将序列转为集合（自动去重）
+tuple([1,2])             # (1, 2)             将序列转为元组
+hex(255)                 # '0xff'             整数 → 十六进制字符串
+oct(8)                   # '0o10'             整数 → 八进制字符串
+bin(5)                   # '0b101'            整数 → 二进制字符串
+ord('a')                 # 97                 字符 → Unicode 码位
+chr(97)                  # 'a'                Unicode 码位 → 字符
+round(3.7)               # 4                  四舍五入
+abs(-5)                  # 5                  绝对值
+pow(2, 3)                # 8                  幂运算，等价于 2**3
+divmod(10, 3)            # (3, 1)             同时返回商和余数
 ```
 
 ### 7.4 对象操作
@@ -1073,11 +1107,129 @@ help(obj.method)               # 帮助文档
 ### 7.5 函数式编程
 
 ```python
-map(lambda x: x*2, [1,2,3])     # 映射
-filter(lambda x: x>2, [1,2,3])  # 过滤
+list(map(lambda x: x*2, [1,2,3]))     # [2, 4, 6]     每个元素 ×2
+list(filter(lambda x: x>2, [1,2,3]))  # [3]            保留大于2的元素
 from functools import reduce
-reduce(lambda x,y: x+y, [1,2,3])  # 累积
+reduce(lambda x,y: x+y, [1,2,3])       # 6              累加：((1+2)+3)
 ```
+
+### 7.6 迭代器与生成器
+
+#### 可迭代对象 vs 迭代器
+
+```python
+# 可迭代对象（Iterable）：可以放进 for 循环的，如 list/tuple/dict/set/str
+nums = [1, 2, 3]
+for n in nums:          # nums 是可迭代对象
+    print(n)
+
+# 迭代器（Iterator）：惰性计算，一次一个值，只能前进不能回退
+it = iter(nums)         # 通过 iter() 从可迭代对象获取迭代器
+print(next(it))         # 1
+print(next(it))         # 2
+print(next(it))         # 3
+print(next(it))         # StopIteration（耗尽时抛出）
+
+# 判断方式
+from collections.abc import Iterable, Iterator
+isinstance(nums, Iterable)   # True  — 列表是可迭代对象
+isinstance(nums, Iterator)   # False — 列表本身不是迭代器
+isinstance(it, Iterator)     # True  — iter() 返回的是迭代器
+```
+
+#### 迭代器协议
+
+```python
+# 任何实现了 __iter__ 和 __next__ 的对象都是迭代器
+class CountDown:
+    def __init__(self, start):
+        self.current = start
+
+    def __iter__(self):
+        return self                    # 迭代器返回自身
+
+    def __next__(self):
+        if self.current <= 0:
+            raise StopIteration        # 结束时必须抛出此异常
+        self.current -= 1
+        return self.current + 1
+
+for n in CountDown(3):                 # 输出: 3, 2, 1
+    print(n)
+```
+
+#### 生成器函数（yield）
+
+```python
+# 含有 yield 的函数自动返回生成器（一种特殊的迭代器）
+def countdown(start):
+    while start > 0:
+        yield start                    # 暂停并返回值，下次从此处继续
+        start -= 1
+
+cd = countdown(3)
+print(next(cd))  # 3
+print(next(cd))  # 2
+print(next(cd))  # 1
+
+# 生成器也是迭代器，可直接 for 循环
+for n in countdown(3):                 # 3, 2, 1
+    print(n)
+
+# yield 执行机制：暂停-恢复
+def gen():
+    print("进入函数")
+    yield 1                            # 暂停点1：返回1，保存当前状态
+    print("从 yield 1 之后恢复")
+    yield 2                            # 暂停点2：返回2，保存当前状态
+    print("从 yield 2 之后恢复")
+    # 函数结束 → 自动抛出 StopIteration
+
+g = gen()                              # 不执行函数体，只创建生成器对象
+print(next(g))                         # 进入函数 → 1（暂停于 yield 1）
+print(next(g))                         # 从 yield 1 之后恢复 → 2（暂停于 yield 2）
+print(next(g))                         # 从 yield 2 之后恢复 → StopIteration
+# 输出:
+# 进入函数
+# 1
+# 从 yield 1 之后恢复
+# 2
+# 从 yield 2 之后恢复
+# (StopIteration)
+
+# 经典用法：惰性读取大文件
+def read_large_file(path):
+    with open(path) as f:
+        for line in f:
+            yield line.strip()         # 逐行生成，不一次性加载全部内容
+```
+
+#### 生成器表达式
+
+```python
+# 列表推导式：立即计算，所有结果存入内存
+squares_list = [x**2 for x in range(10_000_000)]  # 占用大量内存
+
+# 生成器表达式：惰性计算，用到一个算一个
+squares_gen = (x**2 for x in range(10_000_000))   # 几乎不占内存
+print(next(squares_gen))  # 0
+print(next(squares_gen))  # 1
+
+# 对比
+import sys
+print(sys.getsizeof([x**2 for x in range(1000)]))       # 较大
+print(sys.getsizeof((x**2 for x in range(1000))))        # 固定 ~200 字节
+```
+
+| | 列表推导式 | 生成器表达式 |
+|------|-----------|-------------|
+| 语法 | `[x for x in ...]` | `(x for x in ...)` |
+| 求值 | 立即 | 惰性 |
+| 内存 | 存储全部结果 | 只存当前值 |
+| 可遍历次数 | 无数次 | 仅一次 |
+| 适用场景 | 需要多次访问/切片 | 一次性消费/数据量大 |
+
+> 💡 **记住**：`map`/`filter`/`zip`/`range`/`enumerate` 返回的都是惰性迭代器，需要 `list()` 包裹才能查看具体值或多次使用。
 
 ---
 
@@ -1122,7 +1274,7 @@ if __name__ == "__main__":
 ### 8.2 成绩统计程序
 
 ```python
-from typing import List, Dict
+from typing import Dict
 
 def analyze_grades(scores: Dict[str, int]) -> Dict[str, float]:
     """分析成绩并返回统计信息"""
@@ -1148,7 +1300,7 @@ def main():
         "Eve": 65
     }
     
-    stats = analyze_grages(grades)
+    stats = analyze_grades(grades)
     
     print("=" * 30)
     print("成绩统计分析")
