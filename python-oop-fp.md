@@ -519,10 +519,17 @@ class Rectangle:
         self.height *= factor
 
 rect = Rectangle(10, 5)
-print(rect.area)      # 50
+print(rect.area)      # 50  （10 × 5 = 50）
+print(rect.perimeter) # 30  （2 × (10 + 5) = 30）
+
 rect.scale(2)
-print(rect.area)      # 200
-rect.width = 15       # 使用 setter 验证
+print(rect.area)      # 200 （宽度变为20，高度变为10，20 × 10 = 200）
+print(rect.perimeter) # 60  （2 × (20 + 10) = 60）
+
+rect.width = 15       # 使用 setter 验证，通过（15 > 0）
+print(rect.area)      # 150 （15 × 10 = 150）
+
+# rect.width = -5     # 取消注释会抛出 ValueError: Width must be positive
 ```
 
 ### 2.3 继承与多态
@@ -555,6 +562,10 @@ def make_speak(animals: list[Animal]):
 
 animals = [Dog("Buddy"), Cat("Whiskers"), Dog("Max")]
 make_speak(animals)
+# 输出:
+# Buddy: Buddy says Woof!
+# Whiskers: Whiskers says Meow!
+# Max: Max says Woof!
 ```
 
 ### 2.4 多重继承与 MRO
